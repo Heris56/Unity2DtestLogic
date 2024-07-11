@@ -1,4 +1,5 @@
 
+using System.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -8,12 +9,18 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float jumpPower;
     [SerializeField] private LayerMask groundlayer;
     [SerializeField] private LayerMask wallLayer;
+    [SerializeField] private float dashForce = 10f;
+    [SerializeField] private float dashCooldownTime = 1f;
+    [SerializeField] private TrailRenderer TR;
+    private float dashtime = 0.2f;
+    private bool canDash = true;
+    private bool isdashing;
     private int stickOnwall;
-    private Rigidbody2D body;
+    public Rigidbody2D body;
     private Animator anim;
     private BoxCollider2D boxCollider;
     private float walljumpcooldown;
-    private float horizontalinput;
+    public float horizontalinput;
 
     private void Awake()
     {
@@ -27,10 +34,23 @@ public class PlayerMovement : MonoBehaviour
     {
         horizontalinput = Input.GetAxis("Horizontal");
 
+        if (isdashing)
+        {
+            return;
+        }
+
         // reset jump saat di di ground/lantai
         if (isGrounded())
         {
             stickOnwall = 0;
+        }
+
+        // set rotasi karakter, jika karakter somehow jungkir balik
+        if (transform.localRotation.eulerAngles.z > 0 || transform.localRotation.eulerAngles.z < 0)
+        {
+            Vector3 newRotation = transform.localRotation.eulerAngles;
+            newRotation.z = 0;
+            transform.localRotation = Quaternion.Euler(newRotation);
         }
 
         // flip char ke kanan
@@ -45,21 +65,17 @@ public class PlayerMovement : MonoBehaviour
             transform.localScale = new Vector3(-1, 1, 1);
         }
 
-        if (Input.GetKey(KeyCode.Space) && isGrounded())
-        {
-            jump();
-        }
-
         // set animator param
         anim.SetBool("run", horizontalinput != 0);
         anim.SetBool("grounded", isGrounded());
-        
+
+
         // wall jump logic
-        if(walljumpcooldown > 0.2f)
+        if (walljumpcooldown > 0.2f)
         {
             body.velocity = new Vector2(horizontalinput * speed, body.velocity.y);
 
-            if(onWall() && !isGrounded())
+            if (onWall() && !isGrounded())
             {
                 body.gravityScale = 2.5f;
                 body.velocity = Vector2.zero;
@@ -73,11 +89,18 @@ public class PlayerMovement : MonoBehaviour
             {
                 jump();
             }
+
         }
         else
         {
             walljumpcooldown += Time.deltaTime;
         }
+
+        if(Input.GetMouseButton(1) && !isGrounded() && !onWall() && canDash)
+        {
+            StartCoroutine(Dashin());
+        }
+        
     }
 
     private void jump()
@@ -87,6 +110,7 @@ public class PlayerMovement : MonoBehaviour
             body.velocity = new Vector2(body.velocity.x, jumpPower);
             anim.SetTrigger("jump");
         }
+
         else if (onWall() && !isGrounded())
         {
             if (horizontalinput == 0)
@@ -107,16 +131,33 @@ public class PlayerMovement : MonoBehaviour
     }
 
 
-    private bool isGrounded()
+    public bool isGrounded()
     {
         RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, Vector2.down, 0.1f, groundlayer);
         return raycastHit.collider != null;
     }
-    private bool onWall()
+    public bool onWall()
     {
         RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, new Vector2(transform.localScale.x, 0), 0.1f, wallLayer);
         return raycastHit.collider != null;
     }
+
+    private IEnumerator Dashin()
+    {
+        canDash = false;
+        isdashing = true;
+        float origingravity = body.gravityScale;
+        body.gravityScale = 0f;
+        body.velocity = new Vector2(transform.localScale.x * dashForce, 0f);
+        TR.emitting = true;
+        yield return new WaitForSeconds(dashtime);
+        TR.emitting = false;
+        isdashing = false;
+        body.gravityScale = origingravity;
+        yield return new WaitForSeconds(dashCooldownTime);
+        canDash = true;
+    }
+
 
     public bool canAttack()
     {
